@@ -6,23 +6,97 @@ using System.Web;
 
 namespace RepairShopProject12.Scripts
 {
-    public class WhereTypeCase
+    /// <summary>
+    /// This attribute is used to represent a string value
+    /// for a value in an enum.
+    /// </summary>
+    public class StringValueAttribute : Attribute
     {
-        public WhereType type;
-        public string propertieName;
-        public bool isFilled()
+
+        #region Properties
+
+        /// <summary>
+        /// Holds the stringvalue for a value in an enum.
+        /// </summary>
+        public string StringValue { get; protected set; }
+
+        #endregion
+
+        #region Constructor
+
+        /// <summary>
+        /// Constructor used to init a StringValue Attribute
+        /// </summary>
+        /// <param name="value"></param>
+        public StringValueAttribute(string value)
         {
-            if (propertieName != null && propertieName.Length > 0)
-                return true;
-            return false;
+            this.StringValue = value;
         }
+
+        #endregion
     }
-    public enum WhereType
+
+    //public class WhereTypeCase
+    //{
+    //    public WhereType type;
+    //    public string propertieName;
+    //    public string expectedValue;
+    //    public bool isFilled()
+    //    {
+    //        if (propertieName != null && propertieName.Length > 0)
+    //            return true;
+    //        return false;
+    //    }
+    //}
+    //public enum WhereType
+    //{
+    //    and, or, not
+    //}
+
+    public enum ValueSelectType
     {
-        and,or    
+        NamesAndValues,
+        Names,
+        Values
     }
+
+    public enum cmdType
+    {
+        [StringValue("select")]
+        Select,
+        [StringValue("update")]
+        Update,
+        [StringValue("delete")]
+        Delete,
+        [StringValue("insert into")]
+        Insert
+    }
+
     public static class DBProcessor
     {
+        /// <summary>
+        /// Will get the string value for a given enums value, this will
+        /// only work if you assign the StringValue attribute to
+        /// the items in your enum.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        public static string GetStringValue(this Enum value)
+        {
+            // Get the type
+            Type type = value.GetType();
+
+            // Get fieldinfo for this type
+            FieldInfo fieldInfo = type.GetField(value.ToString());
+
+            // Get the stringvalue attributes
+            StringValueAttribute[] attribs = fieldInfo.GetCustomAttributes(
+                typeof(StringValueAttribute), false) as StringValueAttribute[];
+
+            // Return the first if there was a match.
+            return attribs.Length > 0 ? attribs[0].StringValue : null;
+        }
+
         /// <summary>
         /// Creates a table enterie of type T
         /// </summary>
@@ -152,20 +226,82 @@ namespace RepairShopProject12.Scripts
             return SqlDataAccess.ExecuteDataString(databaseString);
         }
 
-        /// <summary>
-        /// Sql command formatter tool
-        /// </summary>
-        /// <param name="DatabaseTable"></param>
-        /// <param name="wheres"></param>
-        /// <param name="excludeStrings"></param>
-        /// <returns></returns>
-        private static string formatString<T>(T data, string DatabaseTable, List<WhereTypeCase> wheres = null, List<string> excludeStrings = null, bool checkData = true)
-        {
-            if(checkData){
-                if (wheres.Where(w => w.isFilled() == false) != null)
-                    return "Where case error!";}
 
-            return "";
+        private static string FormatString<T>(
+            T data, 
+            string DatabaseTable, 
+            cmdType commandType, 
+            string wheres = null, 
+            List<string> excludeStrings = null,
+            bool overWriteSelectAll = false)
+        {
+            Type t = data.GetType();
+            PropertyInfo[] props = t.GetProperties();
+
+            string commandString = commandType.GetStringValue();
+
+            if (commandType == cmdType.Select)
+            {
+                if (overWriteSelectAll)
+                    commandString += $" * from {DatabaseTable}";
+                else
+                    commandString += $" {FormatProperties(props, data, excludeStrings, ValueSelectType.Names)} From {DatabaseTable}";
+            }
+            if(commandType == cmdType.Update)
+            {
+                commandString += $" {DatabaseTable} set {FormatProperties(props, data, excludeStrings)}";
+                if(wheres!= null && wheres.Length > 0)
+                    commandString += $" where {wheres}";
+            }
+            if (commandType == cmdType.Delete)
+            {
+                if (wheres != null && wheres.Length > 0)
+                    commandString += $" from {DatabaseTable} where {wheres}";
+                else
+                    return "Cant delete without where case!";
+            }
+            if (commandType == cmdType.Insert)
+            {
+                commandString += $" {DatabaseTable} ({FormatProperties(props, data, excludeStrings, ValueSelectType.Names)}) values ({FormatProperties(props, data, excludeStrings, ValueSelectType.Values)})";
+            }
+
+            return commandString;
+        }
+
+        public static string FormatProperties<T>(PropertyInfo[] props, T data, List<string> excludeStrings = null, ValueSelectType valueSelectType = ValueSelectType.NamesAndValues)
+        {
+            string returnString = "";
+            string[] properties = new string[props.Length];
+
+            for (int i = 0; i < props.Length; i++)
+            {
+                if (excludeStrings != null)
+                {
+                    if (excludeStrings.Contains(props[i].Name)) { continue; }
+                }
+                properties[i] = GetValue<T>(props[i], data, valueSelectType);
+            }
+
+            returnString += String.Join(",", properties);
+            return returnString;
+        }
+
+
+        public static string GetValue<T>(PropertyInfo info, T data, ValueSelectType valueSelectType)
+        {
+            
+            if(info.GetValue(data) != null && info.GetValue(data).ToString().Length > 0)
+            {
+                if (valueSelectType == ValueSelectType.NamesAndValues)
+                    return $"{info.Name}='{info.GetValue(data).ToString()}'";
+                if (valueSelectType == ValueSelectType.Names)
+                    return $"'{info.Name}'";
+                if (valueSelectType == ValueSelectType.Values)
+                    return $"'{info.GetValue(data).ToString()}'";
+                return "";
+            }
+                
+            return $"{info.Name}=''"; 
         }
 
         /// <summary>
@@ -243,6 +379,8 @@ namespace RepairShopProject12.Scripts
             string databaseString = "select ";
             Type t = Data.GetType();
             PropertyInfo[] props = t.GetProperties();
+            var result = FormatString<T>(Data, DatabaseTable, cmdType.Select, wherePropertie, excludeStrings:null);
+            return SqlDataAccess.LoadData<T>(result).FirstOrDefault();
 
             for (int i = 0; i < props.Length; i++)
             {
@@ -260,6 +398,8 @@ namespace RepairShopProject12.Scripts
 
             if (whereCase != null)
                 databaseString += $" where {wherePropertie}={whereCase.GetValue(Data)}";
+
+            
 
             return SqlDataAccess.LoadData<T>(databaseString).FirstOrDefault();
         }

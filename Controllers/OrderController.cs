@@ -1,11 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Web;
+﻿using System.Collections.Generic;
 using System.Web.Mvc;
 using RepairShopProject12.Models;
 using RepairShopProject12.Scripts;
-using System.Linq;
 
 namespace RepairShopProject12.Controllers
 {
@@ -43,13 +39,11 @@ namespace RepairShopProject12.Controllers
             }
             return View(results);
         }
-
         public ActionResult CreateOrder()
         {
             LoadStaticStatusData();
             return View();
         }
-
         [HttpPost]
         public ActionResult CreateOrder(OrderModel orderModel)
         {
@@ -58,6 +52,8 @@ namespace RepairShopProject12.Controllers
             orderModel.OrderId = DBProcessor.Count<OrderModel>("Orders") +1;
 
             DBProcessor.Create<ImageLinkModel>(new ImageLinkModel(), "ImageLinks");
+
+
             orderModel.ImageID = DBProcessor.Count<ImageLinkModel>("ImageLinks");
             DBProcessor.Create(orderModel, "Orders",true, new List<string> { "OrderStatusLabel" });
 
@@ -86,8 +82,6 @@ namespace RepairShopProject12.Controllers
             results.OrderStatusLabel = (StatusType)results.OrderStatus;
             return View(results);
         }
-
-
         public ActionResult DeleteOrder(int OrderId)
         {
             LoadStaticStatusData();
@@ -95,7 +89,6 @@ namespace RepairShopProject12.Controllers
             results.OrderStatusLabel = (StatusType)results.OrderStatus;
             return View(results);
         }
-
         [HttpPost]
         public ActionResult DeleteOrder(OrderModel orderModel)
         {
@@ -103,7 +96,6 @@ namespace RepairShopProject12.Controllers
             DBProcessor.Delete("Orders", orderModel.Id.ToString());
             return View();
         }
-
         //---------------------------------------------------------------------------------------------
         //=============================================================================================
         //---------------------------------------------------------------------------------------------
